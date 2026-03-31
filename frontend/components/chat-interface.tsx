@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, FileCheck } from "lucide-react";
+import { Send, Loader2, FileCheck, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EvidencePanel } from "@/components/evidence-panel";
@@ -20,6 +20,11 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
+  // 🎤 VOICE STATES
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll
@@ -27,7 +32,100 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 🔥 MAIN FUNCTION
+  // 🎤 SETUP SPEECH RECOGNITION
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition ||
+        (window as any).webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        setSpeechSupported(true);
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+
+       recognition.onresult = (event: any) => {
+  console.log("VOICE EVENT:", event);
+
+  let transcript = "";
+
+  for (let i = 0; i < event.results.length; i++) {
+    transcript += event.results[i][0].transcript;
+  }
+
+  //  CLEAN SPACES
+  transcript = transcript.replace(/\s+/g, " ").trim();
+
+  //  CHECK IF URDU SCRIPT
+  const isUrduScript = /[\u0600-\u06FF]/.test(transcript);
+
+  if (!isUrduScript) {
+    // 👉 Handle English + Roman Urdu
+
+    const lower = transcript.toLowerCase();
+
+    const englishWords = [
+      "account", "social", "media", "hacked", "what", "should", "do",
+      "how", "help", "email", "password", "someone", "my"
+    ];
+
+    const isEnglish = englishWords.some(word => lower.includes(word));
+
+    if (isEnglish) {
+      //  Capitalize first letter (English)
+      transcript = lower.charAt(0).toUpperCase() + lower.slice(1);
+    } else {
+      //  Roman Urdu → keep lowercase
+      transcript = lower;
+    }
+  }
+
+  console.log("VOICE FINAL:", transcript);
+
+  setInput(transcript);
+};
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.onerror = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+  }, []);
+
+// 🎤 TOGGLE VOICE
+const toggleListening = () => {
+  if (!recognitionRef.current) return;
+
+  if (isListening) {
+    recognitionRef.current.stop();
+    setIsListening(false);
+  } else {
+    // 🔥 Detect language from input
+    const text = input.toLowerCase();
+
+    if (/[؀-ۿ]/.test(text)) {
+      recognitionRef.current.lang = "ur-PK"; // Urdu script
+    } else {
+      recognitionRef.current.lang = "en-US"; // English + Roman Urdu
+    }
+
+    console.log("🎤 Language set to:", recognitionRef.current.lang);
+
+    recognitionRef.current.start();
+    setIsListening(true);
+  }
+};
+
+  //  MAIN FUNCTION
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -46,12 +144,10 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
     try {
       const data = await askLegalAI(currentInput, department.id);
 
-      console.log("BACKEND RESPONSE:", data);
-
       const botMessage = {
         role: "assistant",
         content: data.answer,
-        evidence: data.evidence_list, // 🔥 IMPORTANT
+        evidence: data.evidence_list,
       };
 
       setMessages((prev) => [...prev, botMessage]);
@@ -118,10 +214,8 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
                       : "bg-gray-200 text-black"
                   }`}
                 >
-                  {/* MAIN ANSWER */}
                   <div>{message.content}</div>
 
-                  {/* 🔥 EVIDENCE LIST */}
                   {message.evidence && (
                     <div className="mt-2 text-xs text-gray-700">
                       <strong>Evidence:</strong>
@@ -152,10 +246,35 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
       <div className="border-t p-4">
         <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
           <div className="flex items-end gap-2 rounded-xl border p-2">
+
+            {/* 🎤 VOICE BUTTON */}
+            {speechSupported && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleListening}
+                className={`h-10 w-10 ${
+                  isListening ? "text-red-500 bg-red-100" : ""
+                }`}
+                disabled={isLoading}
+              >
+                {isListening ? (
+                  <MicOff className="h-4 w-4" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`Describe your ${department.name.toLowerCase()} issue...`}
+              placeholder={
+                isListening
+                  ? "Listening..."
+                  : `Describe your ${department.name.toLowerCase()} issue...`
+              }
               className="flex-1 resize-none border-0 bg-transparent"
               disabled={isLoading}
             />
@@ -167,6 +286,7 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
                 <Send className="h-4 w-4" />
               )}
             </Button>
+
           </div>
         </form>
       </div>
