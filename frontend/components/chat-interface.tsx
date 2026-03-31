@@ -20,19 +20,32 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
-  // 🎤 VOICE STATES
+  // 🎤 VOICE INPUT
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 🔊 VOICE OUTPUT FUNCTION
+  const speakText = (text: string) => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
   // Scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 🎤 SETUP SPEECH RECOGNITION
+  // 🎤 SPEECH RECOGNITION SETUP
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition =
@@ -47,94 +60,63 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
         recognition.interimResults = true;
         recognition.lang = "en-US";
 
-       recognition.onresult = (event: any) => {
-  console.log("VOICE EVENT:", event);
+        recognition.onresult = (event: any) => {
+          let transcript = "";
 
-  let transcript = "";
+          for (let i = 0; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
 
-  for (let i = 0; i < event.results.length; i++) {
-    transcript += event.results[i][0].transcript;
-  }
+          // CLEAN TEXT
+          transcript = transcript.replace(/\s+/g, " ").trim();
 
-  //  CLEAN SPACES
-  transcript = transcript.replace(/\s+/g, " ").trim();
+          const isUrduScript = /[\u0600-\u06FF]/.test(transcript);
 
-  //  CHECK IF URDU SCRIPT
-  const isUrduScript = /[\u0600-\u06FF]/.test(transcript);
+          if (!isUrduScript) {
+            const lower = transcript.toLowerCase();
+            transcript = lower.charAt(0).toUpperCase() + lower.slice(1);
+          }
 
-  if (!isUrduScript) {
-    // 👉 Handle English + Roman Urdu
-
-    const lower = transcript.toLowerCase();
-
-    const englishWords = [
-      "account", "social", "media", "hacked", "what", "should", "do",
-      "how", "help", "email", "password", "someone", "my"
-    ];
-
-    const isEnglish = englishWords.some(word => lower.includes(word));
-
-    if (isEnglish) {
-      //  Capitalize first letter (English)
-      transcript = lower.charAt(0).toUpperCase() + lower.slice(1);
-    } else {
-      //  Roman Urdu → keep lowercase
-      transcript = lower;
-    }
-  }
-
-  console.log("VOICE FINAL:", transcript);
-
-  setInput(transcript);
-};
-
-        recognition.onend = () => {
-          setIsListening(false);
+          setInput(transcript);
         };
 
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = () => setIsListening(false);
 
         recognitionRef.current = recognition;
       }
     }
   }, []);
 
-// 🎤 TOGGLE VOICE
-const toggleListening = () => {
-  if (!recognitionRef.current) return;
+  // 🎤 TOGGLE VOICE INPUT
+  const toggleListening = () => {
+    if (!recognitionRef.current) return;
 
-  if (isListening) {
-    recognitionRef.current.stop();
-    setIsListening(false);
-  } else {
-    // 🔥 Detect language from input
-    const text = input.toLowerCase();
-
-    if (/[؀-ۿ]/.test(text)) {
-      recognitionRef.current.lang = "ur-PK"; // Urdu script
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
     } else {
-      recognitionRef.current.lang = "en-US"; // English + Roman Urdu
+      const text = input.toLowerCase();
+
+      if (/[؀-ۿ]/.test(text)) {
+        recognitionRef.current.lang = "ur-PK";
+      } else {
+        recognitionRef.current.lang = "en-US";
+      }
+
+      recognitionRef.current.start();
+      setIsListening(true);
     }
+  };
 
-    console.log("🎤 Language set to:", recognitionRef.current.lang);
-
-    recognitionRef.current.start();
-    setIsListening(true);
-  }
-};
-
-  //  MAIN FUNCTION
+  // 🔥 MAIN CHAT FUNCTION
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const currentInput = input;
-
     const userMessage = {
       role: "user",
-      content: currentInput,
+      content: input,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -142,7 +124,7 @@ const toggleListening = () => {
     setIsLoading(true);
 
     try {
-      const data = await askLegalAI(currentInput, department.id);
+      const data = await askLegalAI(input, department.id);
 
       const botMessage = {
         role: "assistant",
@@ -151,15 +133,13 @@ const toggleListening = () => {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-    } catch (error) {
-      console.error(error);
 
+      // 🔊 AUTO SPEAK RESPONSE
+      speakText(data.answer);
+    } catch (error) {
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: "Error connecting to backend.",
-        },
+        { role: "assistant", content: "Error connecting to backend." },
       ]);
     } finally {
       setIsLoading(false);
@@ -182,64 +162,59 @@ const toggleListening = () => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4">
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border">
-              <DepartmentIcon name={department.iconName} className="h-8 w-8" />
-            </div>
-
-            <h2 className="mb-2 text-xl font-semibold">
-              {department.name}
-            </h2>
-
-            <p className="text-sm text-muted-foreground">
-              {department.description}
-            </p>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-3xl space-y-4">
-            {messages.map((message, index) => (
+        <div className="mx-auto max-w-3xl space-y-4">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`flex ${
+                message.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
+            >
               <div
-                key={index}
-                className={`flex ${
+                className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
                   message.role === "user"
-                    ? "justify-end"
-                    : "justify-start"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 text-black"
                 }`}
               >
-                <div
-                  className={`max-w-[80%] rounded-xl px-4 py-3 text-sm ${
-                    message.role === "user"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-200 text-black"
-                  }`}
-                >
+                <div className="flex justify-between items-start gap-2">
                   <div>{message.content}</div>
 
-                  {message.evidence && (
-                    <div className="mt-2 text-xs text-gray-700">
-                      <strong>Evidence:</strong>
-                      <ul className="list-disc ml-4">
-                        {message.evidence.map((item: string, i: number) => (
-                          <li key={i}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
+                  {message.role === "assistant" && (
+                    <button
+                      onClick={() => speakText(message.content)}
+                      className="text-sm text-gray-500 hover:text-black"
+                    >
+                      🔊
+                    </button>
                   )}
                 </div>
-              </div>
-            ))}
 
-            {isLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Analyzing your query...</span>
+                {message.evidence && (
+                  <div className="mt-2 text-xs text-gray-700">
+                    <strong>Evidence:</strong>
+                    <ul className="list-disc ml-4">
+                      {message.evidence.map((item: string, i: number) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          ))}
 
-            <div ref={messagesEndRef} />
-          </div>
-        )}
+          {isLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Analyzing your query...</span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input */}
@@ -247,7 +222,7 @@ const toggleListening = () => {
         <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
           <div className="flex items-end gap-2 rounded-xl border p-2">
 
-            {/* 🎤 VOICE BUTTON */}
+            {/* 🎤 MIC */}
             {speechSupported && (
               <Button
                 type="button"
@@ -291,7 +266,6 @@ const toggleListening = () => {
         </form>
       </div>
 
-      {/* Evidence Panel */}
       <EvidencePanel
         departmentId={department.id}
         isOpen={showEvidence}
