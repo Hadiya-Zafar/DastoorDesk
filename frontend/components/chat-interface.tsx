@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { DepartmentIcon } from "@/components/department-icon";
 import { askLegalAI } from "@/lib/api";
-
+import ReactMarkdown from "react-markdown";
 import type { LegalDepartment } from "@/lib/legal-departments";
 
 interface ChatInterfaceProps {
@@ -29,16 +29,31 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
 
   // 🔊 VOICE OUTPUT FUNCTION
   const speakText = (text: string) => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
+    let cleanText = text
+      // 🔥 remove markdown symbols
+      .replace(/[#*`>-]/g, "")
+      .replace(/\*\*(.*?)\*\*/g, "$1")
 
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+      // 🔥 FIX COLONS + STRUCTURE
+      .replace(/:/g, ".")          // colon → pause
+      .replace(/\n+/g, ". ")       // new lines → pauses
+
+      // 🔥 clean spaces
+      .replace(/\s+/g, " ")
+      .trim();
+
+    console.log("🔊 CLEAN SPEECH:", cleanText);
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+
+    window.speechSynthesis.speak(utterance);
+  }
+};
 
   // Scroll
   useEffect(() => {
@@ -133,9 +148,6 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-
-      // 🔊 AUTO SPEAK RESPONSE
-      speakText(data.answer);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -180,7 +192,18 @@ export function ChatInterface({ department }: ChatInterfaceProps) {
                 }`}
               >
                 <div className="flex justify-between items-start gap-2">
-                  <div>{message.content}</div>
+                <div className="prose prose-sm max-w-none">
+  <ReactMarkdown
+    components={{
+      h3: ({ ...props }) => <h3 className="font-bold mt-3" {...props} />,
+      strong: ({ ...props }) => <strong className="font-semibold" {...props} />,
+      li: ({ ...props }) => <li className="ml-4 list-disc" {...props} />,
+      p: ({ ...props }) => <p className="mb-2" {...props} />,
+    }}
+  >
+    {message.content}
+  </ReactMarkdown>
+</div>
 
                   {message.role === "assistant" && (
                     <button

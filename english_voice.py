@@ -14,15 +14,15 @@ def generate_english_response(query, context, category, evidence):
     USER QUERY: {query}
     
     Structure:
-    ### ⚖️ Legal Framework
+    ### Legal Framework
     * Statute: [Act Name]
     * Sections: [Section Numbers]
     * Summary: [Explanation]
 
-    ### 📋 Action Plan
+    ###  Action Plan
     [3 steps]
 
-    ### 📁 Evidence Checklist
+    ###  Evidence Checklist
     {evidence}
     """
     return llm.invoke(prompt)
