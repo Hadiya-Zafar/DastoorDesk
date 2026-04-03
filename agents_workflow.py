@@ -16,20 +16,36 @@ class AgentState(TypedDict):
     evidence: List[str]
 
 class DastoorAgent:
-    def __init__(self, vector_db):
+    def _init_(self, vector_db):
         self.llm = OllamaLLM(model="llama3", temperature=0)
         self.vector_db = vector_db
 
     def classify_node(self, state: AgentState):
-        """Node 1: Determines the legal domain."""
-        print("🔍 [Node] Classifying Domain...")
+        """Node 1: Determines legal domain AND detects language."""
+        print("🔍 [Node] Classifying Domain & Language...")
+        
+        # Combined prompt to save API calls and ensure language consistency
         prompt = ChatPromptTemplate.from_template(
-            "Classify this Pakistani legal query: {query}\n"
-            "Options: Cybercrime, Property, Consumer Rights, Family Law.\n"
-            "Respond with ONLY the category name."
+            "Analyze the following Pakistani legal query: {query}\n"
+            "1. Classify into ONE category: Cybercrime, Property, Consumer Rights, Family Law.\n"
+            "2. Detect the language: Urdu or English.\n"
+            "Respond in JSON format: {{\"category\": \"name\", \"language\": \"urdu/english\"}}\n"
+            "Respond ONLY in valid JSON. No extra text"
         )
-        category = self.llm.invoke(prompt.format(query=state['query'])).strip()
-        return {**state, "category": category}
+        
+        raw_output = self.llm.invoke(prompt.format(query=state['query'])).strip()
+        
+        # Simple JSON extraction
+        try:
+            data = json.loads(raw_output)
+            category = data.get("category", "General")
+            language = data.get("language", "english").lower()
+        except:
+            # Fallback if LLM doesn't return clean JSON
+            category = "General"
+            language = "urdu" if any('\u0600' <= c <= '\u06FF' for c in state['query']) else "english"
+
+        return {**state, "category": category, "language": language}
 
     def retrieve_node(self, state: AgentState):
         """Node 2: Restricted Retrieval - Only searches laws relevant to the department."""

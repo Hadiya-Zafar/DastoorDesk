@@ -8,7 +8,6 @@ from evidence_logic import evidence_mapper
 from urdu_voice import generate_urdu_response
 from english_voice import generate_english_response
 
-# 1. Professional Agent State Definition
 class AgentState(TypedDict):
     query: str
     category: str
@@ -19,38 +18,38 @@ class AgentState(TypedDict):
     evidence: List[str]
 
 def create_dastoor_graph(vector_db, legal_tools):
-    # Model for the translator step
     llm = OllamaLLM(model="llama3", temperature=0)
 
-    # --- NODE 1: Classifier ---
     def classifier_node(state: AgentState):
-        logger.info(f"[NODE] Classifier: Routing to {state.get('category')}")
-        return state
+        # Auto-detect language if not already set by main.py
+        is_urdu = any('\u0600' <= c <= '\u06FF' for c in state['query'])
+        detected_lang = "urdu" if is_urdu else "english"
+        
+        logger.info(f"[NODE] Classifier: Detected {detected_lang}")
+        return {**state, "language": detected_lang}
 
-    # --- NODE 2: Retriever ---
     def retriever_node(state: AgentState):
         logger.info(f"[NODE] Retriever: Fetching Law for {state['category']}")
         context = legal_tools.search_pakistani_laws(f"{state['category']} {state['query']}")
         evidence = evidence_mapper.get_evidence_checklist(state['category'])
         return {**state, "context": context, "evidence": evidence}
 
-    # --- NODE 3: Legal Translator ---
     def translator_node(state: AgentState):
+        # If user asked in English, don't waste time translating the legal context
         if state['language'] == "english":
             return {**state, "translated_context": state['context']}
         
-        logger.info("[NODE] Translator: English Law -> Urdu Script")
-        prompt = f"Translate this Pakistani Law into professional Urdu script: {state['context']}"
+        # Translate English law context to Urdu so the Urdu specialist has Urdu material to work with
+        logger.info("[NODE] Translator: Translating English Context to Urdu Script")
+        prompt = f"Translate the following Pakistani legal clauses into professional Urdu script (اردو): {state['context']}"
         translated = llm.invoke(prompt)
         return {**state, "translated_context": translated}
 
-    # --- NODE 4: Specialist Router (The Brain) ---
     def reasoner_node(state: AgentState):
-        logger.info(f"[NODE] Router: Sending to {state['language'].upper()} Specialist")
+        logger.info(f"[NODE] Router: Calling {state['language'].upper()} Specialist")
         
-        # --- FIXED: LOGIC MUST BE INSIDE THE NODE ---
         if state['language'] == "urdu":
-            # Calls your urdu_voice.py
+            # Pass the TRANSLATED context to the Urdu response generator
             response = generate_urdu_response(
                 state['query'], 
                 state['translated_context'], 
@@ -58,7 +57,6 @@ def create_dastoor_graph(vector_db, legal_tools):
                 state['evidence']
             )
         else:
-            # Calls your english_voice.py
             response = generate_english_response(
                 state['query'], 
                 state['context'], 
@@ -70,7 +68,6 @@ def create_dastoor_graph(vector_db, legal_tools):
 
     # --- BUILD WORKFLOW ---
     workflow = StateGraph(AgentState)
-    
     workflow.add_node("classifier", classifier_node)
     workflow.add_node("retriever", retriever_node)
     workflow.add_node("translator", translator_node)

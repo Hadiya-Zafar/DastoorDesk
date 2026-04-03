@@ -3,7 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from logger_config import logger
 
 class TranslatorService:
-    def _init_(self):
+    def init(self):
         # Use Gemma 3 1b for high-speed routing
         self.llm = OllamaLLM(model="gemma3:1b", temperature=0)
         

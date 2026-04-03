@@ -16,9 +16,9 @@ def generate_urdu_response(query, context, category, evidence):
     
     براہ کرم درج ذیل ڈھانچے میں جواب دیں:
     ### ⚖️ قانون کی وضاحت
-    * **قانون کا نام:** [Act Name]
-    * **دفعات:** [Sections]
-    * **خلاصہ:** [Simple Urdu explanation]
+    * *قانون کا نام:* [Act Name]
+    * *دفعات:* [Sections]
+    * *خلاصہ:* [Simple Urdu explanation]
 
     ### 📋 آپ کا لائحہ عمل
     [3 practical steps]
